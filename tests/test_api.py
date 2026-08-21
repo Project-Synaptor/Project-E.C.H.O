@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 from app.main import app
-from app.storage import DB_PATH
+from app.storage import DB_PATH,init_db
 import os
 
 client = TestClient(app)
@@ -8,6 +8,7 @@ client = TestClient(app)
 def setup_module():
     if DB_PATH.exists():
         os.remove(DB_PATH)
+    init_db()
 
 def test_health_check():
     r = client.get("/health")
@@ -49,7 +50,7 @@ def test_post_validate_missing_required_field():
 
 def test_post_validate_empty_alert_id():
     r = client.post("/validate", json={"alert_id": "", "is_valid": True})
-    assert r.status_code == 500  
+    assert r.status_code == 422  
 
 def test_post_validate_wrong_type():
     r = client.post("/validate", json={"alert_id": "ALT-8821", "is_valid": "yes"})
