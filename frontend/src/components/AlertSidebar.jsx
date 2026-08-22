@@ -1,11 +1,24 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import StatusBadge from "./StatusBadge";
 
 
 function AlertSidebar({ alert, onClose, onValidate }) {
-   
-    const [feedback, setFeedback] = useState("");
 
+    const [feedback, setFeedback] = useState("");
+    useEffect(() => {
+        setFeedback("");
+    }, [alert?.alert_id]);
+
+    const handleValidation = async (isValid) => {
+        await onValidate(
+            alert.alert_id,
+            isValid,
+            feedback.trim() === "" ? null : feedback
+        );
+
+        // Clear feedback after validation
+        setFeedback("");
+    };
     // If no alert is selected, don't show anything
     if (!alert) {
         return null;
@@ -14,6 +27,9 @@ function AlertSidebar({ alert, onClose, onValidate }) {
 
     return (
         <div className="sidebar">
+
+            {/* Mobile bottom-sheet handle */}
+            <div className="sidebar-handle"></div>
 
             {/* Close button */}
             <button
@@ -115,23 +131,14 @@ function AlertSidebar({ alert, onClose, onValidate }) {
 
             <button
                 className="validate-button"
-                onClick={() => onValidate(
-                    alert.alert_id,
-                    true,
-                    feedback.trim() === "" ? null : feedback
-                )}
+                onClick={() => handleValidation(true)}
             >
                 ✓ Validate Alert
             </button>
 
-
             <button
                 className="false-button"
-                onClick={() => onValidate(
-                    alert.alert_id,
-                    false,
-                    feedback.trim() === "" ? null : feedback
-                )}
+                onClick={() => handleValidation(false)}
             >
                 ✕ Report False Positive
             </button>
