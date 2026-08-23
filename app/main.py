@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 import logging
@@ -32,24 +32,31 @@ def health_check():
     return {"status": "operational", "service": "E.C.H.O. Hub"}
 
 @app.get("/alerts", response_model=List[AlertResponse])
-def get_alerts():
-    """
-    Sub-2KB compressed JSON payload for low-bandwidth edge delivery.
-    response_model=List[AlertResponse] does double duty:
-      1. Validates outgoing data against the contract (catches ML bugs before they ship)
-      2. Strips any extra fields the ML/mock layer accidentally included
-    """
+def get_alerts(scenario: str | None = Query(default=None)):
+
+    if scenario not in (None, "flood"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported scenario. Use 'flood'.",
+        )
+
     try:
-        alerts = get_alerts_source()
+        alerts = get_alerts_source(scenario=scenario)
+
         if not alerts:
             logger.warning("get_alerts_source() returned an empty list.")
-        updated_alerts=[]
+
+        updated_alerts = []
+
         for alert in alerts:
             backend_alert_id = resolve_alert_id(
                 alert.latitude,
                 alert.longitude,
-                alert.risk_level.value)
+                alert.risk_level.value
+            )
+
             validations = get_validation_status(backend_alert_id)
+
             if validations:
                 latest = validations[0]
                 if latest["is_valid"]:
@@ -58,21 +65,24 @@ def get_alerts():
                     current_status = AlertStatus.FALSE_POSITIVE
             else:
                 current_status = AlertStatus.UNVERIFIED
+
             updated_alert = alert.model_copy(
                 update={
                     "alert_id": backend_alert_id,
                     "status": current_status,
                 }
             )
+
             updated_alerts.append(updated_alert)
+
         return updated_alerts
+
     except Exception as e:
         logger.error(f"Failed to fetch alerts: {e}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="A.U.R.A. engine unavailable — showing no alerts.",
         )
-
 @app.post("/validate", response_model=ValidationResponse)
 def validate_alert(payload: ValidationRequest):
     """
