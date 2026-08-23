@@ -5,6 +5,7 @@ from contextlib import contextmanager
 import uuid
 import threading
 import os
+from datetime import datetime, timezone
 DB_PATH = Path(os.getenv("DB_PATH",Path(__file__).resolve().parent.parent / "echo_database.sqlite"))
 _state_lock = threading.Lock()
 
@@ -79,24 +80,59 @@ def get_validation_status(alert_id: str) -> list[dict]:
 
 def _location_key(lat: float,lon: float,precision: int = 4) -> str:
     return f"{round(lat, precision)}_{round(lon, precision)}"
+def resolve_alert_id(lat: float, lon: float, risk_level: str) -> tuple[str, str]:
+    location_key = _location_key(lat, lon)
 
-def resolve_alert_id(latitude: float,longitude: float,risk_level: str) -> str:
-    location_key = _location_key(latitude,longitude)
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).isoformat(
+        timespec="seconds"
+    ).replace("+00:00", "Z")
+
+    # RESTORED: _state_lock for concurrency safety
     with _state_lock, get_connection() as conn:
-        conn.execute("BEGIN IMMEDIATE")
         conn.row_factory = sqlite3.Row
-        row = conn.execute("""SELECT * FROM active_state WHERE location_key = ?""",(location_key,)).fetchone()
-        if row is not None and row["risk_level"] == risk_level:
-            return row["alert_id"]
-        new_alert_id = ("ALT-" + uuid.uuid4().hex[:8].upper())
-        conn.execute("""INSERT INTO active_state(location_key,alert_id,risk_level,updated_at) VALUES (?, ?, ?, ?)
-                     ON CONFLICT(location_key) DO UPDATE SET alert_id = excluded.alert_id,risk_level = excluded.risk_level,
-                     updated_at = excluded.updated_at""",(location_key,new_alert_id,risk_level,now))
-        conn.execute("""INSERT INTO alert_history(alert_id,location_key,risk_level,created_at) VALUES (?, ?, ?, ?)""",
-                     (new_alert_id,location_key,risk_level,now))
-        return new_alert_id
 
+        row = conn.execute(
+            """
+            SELECT alert_id, risk_level, updated_at
+            FROM active_state
+            WHERE location_key = ?
+            """,
+            (location_key,),
+        ).fetchone()
+
+        # Same location + same risk = existing persistent alert
+        if row is not None and row["risk_level"] == risk_level:
+            return row["alert_id"], row["updated_at"]
+
+        # New alert state
+        new_alert_id = f"ALT-{uuid.uuid4().hex[:8].upper()}"
+
+        conn.execute(
+            """
+            INSERT INTO active_state(
+                location_key, alert_id, risk_level, updated_at
+            )
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(location_key) DO UPDATE SET
+                alert_id = excluded.alert_id,
+                risk_level = excluded.risk_level,
+                updated_at = excluded.updated_at
+            """,
+            (location_key, new_alert_id, risk_level, now),
+        )
+
+        # RESTORED: alert_history insertion
+        conn.execute(
+            """
+            INSERT INTO alert_history(
+                alert_id, location_key, risk_level, created_at
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (new_alert_id, location_key, risk_level, now),
+        )
+
+        return new_alert_id, now
 def get_alert_history(latitude: float,longitude: float) -> list[dict]:
     location_key = _location_key(latitude,longitude)
     with get_connection() as conn:

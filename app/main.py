@@ -3,7 +3,7 @@ from fastapi import FastAPI, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 import logging
-from app.models import ValidationRequest, ValidationResponse, AlertResponse,AlertStatus
+from app.models import ValidationRequest, ValidationResponse, AlertResponse, AlertStatus
 # from app.mock_ml import get_mock_alerts as get_alerts_source
 from app.ml_source import get_alerts_source
 from app.storage import init_db, save_validation, get_validation_status, resolve_alert_id
@@ -27,6 +27,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 @app.get("/health")
 def health_check():
     return {"status": "operational", "service": "E.C.H.O. Hub"}
@@ -49,7 +50,8 @@ def get_alerts(scenario: str | None = Query(default=None)):
         updated_alerts = []
 
         for alert in alerts:
-            backend_alert_id = resolve_alert_id(
+            # Unpack both the ID and the timestamp
+            backend_alert_id, backend_timestamp = resolve_alert_id(
                 alert.latitude,
                 alert.longitude,
                 alert.risk_level.value
@@ -66,9 +68,11 @@ def get_alerts(scenario: str | None = Query(default=None)):
             else:
                 current_status = AlertStatus.UNVERIFIED
 
+            # Add "timestamp": backend_timestamp to the updated fields
             updated_alert = alert.model_copy(
                 update={
                     "alert_id": backend_alert_id,
+                    "timestamp": backend_timestamp,
                     "status": current_status,
                 }
             )
@@ -83,6 +87,7 @@ def get_alerts(scenario: str | None = Query(default=None)):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="A.U.R.A. engine unavailable — showing no alerts.",
         )
+
 @app.post("/validate", response_model=ValidationResponse)
 def validate_alert(payload: ValidationRequest):
     """
