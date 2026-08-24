@@ -28,7 +28,7 @@ except Exception as e:
     _ML_IMPORT_OK = False
 
 
-def get_alerts_source() -> List[AlertResponse]:
+def get_alerts_source(scenario: str | None = None) -> List[AlertResponse]:
     """
     Calls the real A.U.R.A. engine, validates every item against the frozen
     contract, and falls back to mock data if the engine fails entirely or
@@ -39,7 +39,7 @@ def get_alerts_source() -> List[AlertResponse]:
         logger.warning("real_ml unavailable at import time — using mock alerts.")
         return get_mock_alerts()
     try:
-        raw_alerts = get_predictions()
+        raw_alerts = get_predictions(scenario=scenario)
     except Exception as e:
         logger.error(f"get_predictions() raised: {e} — falling back to mock alerts.")
         return get_mock_alerts()
