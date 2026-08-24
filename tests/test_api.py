@@ -39,19 +39,32 @@ def test_payload_size_under_2kb():
     assert size_bytes < 2048, f"Payload is {size_bytes} bytes, exceeds 2KB budget"
 
 def test_post_validate_success():
-    payload = {"alert_id": "ALT-8821", "is_valid": True, "user_feedback": "Confirmed flooding."}
-    r = client.post("/validate", json=payload)
+    # Fetch a real alert ID from the DB first so we don't get a 404
+    r_alerts = client.get("/alerts")
+    valid_id = r_alerts.json()[0]["alert_id"]
+    
+    payload = {"alert_id": valid_id, "is_valid": True, "user_feedback": "Confirmed flooding."}
+    r = client.post("/validate", json=payload, headers={"X-ECHO-Key": "byteme"})
     assert r.status_code == 200
     assert r.json()["status"] == "success"
 
 def test_post_validate_missing_required_field():
-    r = client.post("/validate", json={"alert_id": "ALT-8821"})
+    r = client.post("/validate", json={"alert_id": "ALT-8821"}, headers={"X-ECHO-Key": "byteme"})
     assert r.status_code == 422  
 
 def test_post_validate_empty_alert_id():
-    r = client.post("/validate", json={"alert_id": "", "is_valid": True})
+    r = client.post("/validate", json={"alert_id": "", "is_valid": True}, headers={"X-ECHO-Key": "byteme"})
     assert r.status_code == 422  
 
 def test_post_validate_wrong_type():
-    r = client.post("/validate", json={"alert_id": "ALT-8821", "is_valid": "yes"})
+    r = client.post("/validate", json={"alert_id": "ALT-8821", "is_valid": "yes"}, headers={"X-ECHO-Key": "byteme"})
     assert r.status_code == 422 
+
+def test_post_validate_wrong_key():
+    r = client.post("/validate", json={"alert_id": "ALT-8821", "is_valid": True}, headers={"X-ECHO-Key": "wrong-key"})
+    assert r.status_code == 401 
+
+def test_post_validate_fake_alert_id():
+    payload = {"alert_id": "ALT-FAKE123", "is_valid": True}
+    r = client.post("/validate", json=payload, headers={"X-ECHO-Key": "byteme"})
+    assert r.status_code == 404

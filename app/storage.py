@@ -59,17 +59,27 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_alert_history_location
             ON alert_history(location_key)
         """)
-def save_validation(alert_id: str,is_valid: bool,feedback: str | None = None) -> bool:
+def save_validation(alert_id: str, is_valid: bool, feedback: str | None = None) -> bool:
     if not alert_id or not alert_id.strip():
         return False
     try:
         with get_connection() as conn:
-            conn.execute("""INSERT INTO validations(alert_id,is_valid,feedback,timestamp)
-            VALUES (?, ?, ?, ?)""",(alert_id.strip(),int(is_valid),feedback,datetime.now(timezone.utc).isoformat()))
+            # NEW: Check if the alert actually exists before inserting
+            exists = conn.execute(
+                "SELECT 1 FROM alert_history WHERE alert_id = ?", 
+                (alert_id.strip(),)
+            ).fetchone()
+            
+            if not exists:
+                raise ValueError(f"Alert ID {alert_id} not found in system.")
+
+            conn.execute("""
+                INSERT INTO validations(alert_id, is_valid, feedback, timestamp)
+                VALUES (?, ?, ?, ?)
+            """, (alert_id.strip(), int(is_valid), feedback, datetime.now(timezone.utc).isoformat()))
         return True
     except sqlite3.Error as e:
-        print( f"[storage.py] DB error saving validation "
-            f"for {alert_id}: {e}" )
+        print(f"[storage.py] DB error saving validation for {alert_id}: {e}")
         return False
 
 def get_validation_status(alert_id: str) -> list[dict]:
